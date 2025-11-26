@@ -34,7 +34,7 @@ export const buildIBomHTML = (source, meta, bom) => {
   const defaultConfig = {
     "show_fabrication": false,
     "redraw_on_drag": true,
-    "highlight_pin1": false,
+    "highlight_pin1": 'none',
     "extra_fields": [],
     "dark_mode": false,
     "bom_view": "left-right",
@@ -43,6 +43,7 @@ export const buildIBomHTML = (source, meta, bom) => {
     "show_silkscreen": true,
     "show_pads": true,
     "layer_view": "FB",
+    "fields": ["Value", "Footprint"],
     "extra_fields": pcbdata.bom.customColumns
   };
 
@@ -56,6 +57,7 @@ export const buildIBomHTML = (source, meta, bom) => {
     '///PCBDATA///': `var pcbdata = ${JSON.stringify(pcbdata)};`,
     '///UTILJS///': 'util.js',
     '///RENDERJS///': 'render.js',
+    '///TABLEUTILJS///': 'table-util.js',
     '///IBOMJS///': 'ibom.js',
     '///USERJS///': ' ',
     '///USERFOOTER///': '<!-- USERFOOTER -->',

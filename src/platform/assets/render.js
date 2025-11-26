@@ -1,7 +1,6 @@
 /* PCB rendering code */
 
 var emptyContext2d = document.createElement("canvas").getContext("2d");
-var hitTestContext2d = document.createElement("canvas").getContext("2d");
 
 function deg2rad(deg) {
   return deg * Math.PI / 180;
@@ -26,20 +25,16 @@ function drawText(ctx, text, color) {
   ctx.lineCap = "round";
   ctx.lineJoin = "round";
   ctx.lineWidth = text.thickness;
-
-  if ("svgpath" in text) {    
-    // TODO: This path must be cached!
-    const path = new Path2D(text.svgpath);
-    if(text.useTrueTypeFontRendering) {            
-      ctx.fill(path);
-    } else {
-      ctx.stroke(path);
-    }
-    
+  if ("svgpath" in text) {
+    ctx.stroke(new Path2D(text.svgpath));
     ctx.restore();
     return;
   }
-
+  if ("polygons" in text) {
+    ctx.fill(getPolygonsPath(text));
+    ctx.restore();
+    return;
+  }
   ctx.translate(...text.pos);
   ctx.translate(text.thickness * 0.5, 0);
   var angle = -text.angle;
@@ -76,16 +71,18 @@ function drawText(ctx, text, color) {
     var offsetx = -lineWidth * (text.justify[0] + 1) / 2;
     var inOverbar = false;
     for (var j = 0; j < txt[i].length; j++) {
-      if (txt[i][j] == '\t') {
-        var fourSpaces = 4 * pcbdata.font_data[' '].w * text.width;
-        offsetx += fourSpaces - offsetx % fourSpaces;
-        continue;
-      } else if (txt[i][j] == '~') {
-        j++;
-        if (j == txt[i].length)
-          break;
-        if (txt[i][j] != '~') {
-          inOverbar = !inOverbar;
+      if (config.kicad_text_formatting) {
+        if (txt[i][j] == '\t') {
+          var fourSpaces = 4 * pcbdata.font_data[' '].w * text.width;
+          offsetx += fourSpaces - offsetx % fourSpaces;
+          continue;
+        } else if (txt[i][j] == '~') {
+          j++;
+          if (j == txt[i].length)
+            break;
+          if (txt[i][j] != '~') {
+            inOverbar = !inOverbar;
+          }
         }
       }
       var glyph = pcbdata.font_data[txt[i][j]];
@@ -121,8 +118,10 @@ function drawText(ctx, text, color) {
 
 function drawedge(ctx, scalefactor, edge, color) {
   ctx.strokeStyle = color;
+  ctx.fillStyle = color;
   ctx.lineWidth = Math.max(1 / scalefactor, edge.width);
   ctx.lineCap = "round";
+  ctx.lineJoin = "round";
   if ("svgpath" in edge) {
     ctx.stroke(new Path2D(edge.svgpath));
   } else {
@@ -156,7 +155,10 @@ function drawedge(ctx, scalefactor, edge, color) {
       ctx.moveTo(...edge.start);
       ctx.bezierCurveTo(...edge.cpa, ...edge.cpb, ...edge.end);
     }
-    ctx.stroke();
+    if("filled" in edge && edge.filled)
+      ctx.fill();
+    else
+      ctx.stroke();
   }
 }
 
@@ -225,39 +227,32 @@ function getPolygonsPath(shape) {
   return shape.path2d;
 }
 
-function drawPolygonShape(ctx, shape, color) {
+function drawPolygonShape(ctx, scalefactor, shape, color) {
   ctx.save();
-  ctx.fillStyle = color;
   if (!("svgpath" in shape)) {
     ctx.translate(...shape.pos);
     ctx.rotate(deg2rad(-shape.angle));
   }
-  ctx.fill(getPolygonsPath(shape));
-  ctx.restore();
-}
-
-
-function drawPolylineShape(ctx, shape, color) {
-  ctx.save();
-  ctx.strokeStyle = color;
-  ctx.lineWidth = shape.width;
-  if (!("svgpath" in shape)) {
-    ctx.translate(...shape.pos);
-    ctx.rotate(deg2rad(-shape.angle));
+  if("filled" in shape && !shape.filled) {
+    ctx.strokeStyle = color;
+    ctx.lineWidth = Math.max(1 / scalefactor, shape.width);
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+    ctx.stroke(getPolygonsPath(shape));
+  } else {
+    ctx.fillStyle = color;
+    ctx.fill(getPolygonsPath(shape));
   }
-  ctx.stroke(getPolygonsPath(shape));
   ctx.restore();
 }
 
-function drawDrawing(ctx, scalefactor, drawing, color) {  
-  if (["segment", "arc", "circle", "curve"].includes(drawing.type)) {
+function drawDrawing(ctx, scalefactor, drawing, color) {
+  if (["segment", "arc", "circle", "curve", "rect"].includes(drawing.type)) {
     drawedge(ctx, scalefactor, drawing, color);
   } else if (drawing.type == "polygon") {
-    drawPolygonShape(ctx, drawing, color);
-  } else if (drawing.type == "text") {    
+    drawPolygonShape(ctx, scalefactor, drawing, color);
+  } else {
     drawText(ctx, drawing, color);
-  } else if (drawing.type == "polyline") {    
-    drawPolylineShape(ctx, drawing, color);
   }
 }
 
@@ -284,21 +279,6 @@ function getCachedPadPath(pad) {
       pad.path2d = getChamferedRectPath(pad.size, pad.radius, pad.chamfpos, pad.chamfratio)
     } else if (pad.shape == "custom") {
       pad.path2d = getPolygonsPath(pad);
-    } else if(pad.shape === "polygon") {      
-      pad.path2d = new Path2D();
-      if(pad.polygon.length > 1) {
-        const pos = {
-          x: pad.pos[0],
-          y: pad.pos[1]
-        };
-
-        pad.path2d.moveTo(pad.polygon[0].x - pos.x, pad.polygon[0].y - pos.y);
-        for (var i = 1; i < pad.polygon.length; i++) {
-          const point = pad.polygon[i];          
-          pad.path2d.lineTo(point.x - pos.x, point.y - pos.y);
-        }
-        pad.path2d.closePath();              
-      }
     }
   }
   return pad.path2d;
@@ -307,12 +287,7 @@ function getCachedPadPath(pad) {
 function drawPad(ctx, pad, color, outline) {
   ctx.save();
   ctx.translate(...pad.pos);
-  if(pad.shape !== 'polygon') {
-    ctx.rotate(deg2rad(pad.angle));  
-  } else {
-    ctx.rotate(deg2rad(0));  
-  }
-  
+  ctx.rotate(-deg2rad(pad.angle));
   if (pad.offset) {
     ctx.translate(...pad.offset);
   }
@@ -328,13 +303,10 @@ function drawPad(ctx, pad, color, outline) {
 }
 
 function drawPadHole(ctx, pad, padHoleColor) {
-  if (pad.type != "th") {
-    return
-  };
-
+  if (pad.type != "th") return;
   ctx.save();
-  ctx.translate(pad.holeCenterPoint.x, pad.holeCenterPoint.y);    
-  ctx.rotate(deg2rad(pad.angle));
+  ctx.translate(...pad.pos);
+  ctx.rotate(-deg2rad(pad.angle));
   ctx.fillStyle = padHoleColor;
   if (pad.drillshape == "oblong") {
     ctx.fill(getOblongPath(pad.drillsize));
@@ -344,7 +316,7 @@ function drawPadHole(ctx, pad, padHoleColor) {
   ctx.restore();
 }
 
-function drawFootprint(ctx, layer, scalefactor, footprint, padColor, padHoleColor, outlineColor, highlight, outline) {
+function drawFootprint(ctx, layer, scalefactor, footprint, colors, highlight, outline) {
   if (highlight) {
     // draw bounding box
     if (footprint.layer == layer) {
@@ -353,10 +325,11 @@ function drawFootprint(ctx, layer, scalefactor, footprint, padColor, padHoleColo
       ctx.translate(...footprint.bbox.pos);
       ctx.rotate(deg2rad(-footprint.bbox.angle));
       ctx.translate(...footprint.bbox.relpos);
-      ctx.fillStyle = padColor;
+      ctx.fillStyle = colors.pad;
       ctx.fillRect(0, 0, ...footprint.bbox.size);
       ctx.globalAlpha = 1;
-      ctx.strokeStyle = padColor;
+      ctx.strokeStyle = colors.pad;
+      ctx.lineWidth = 3 / scalefactor;
       ctx.strokeRect(0, 0, ...footprint.bbox.size);
       ctx.restore();
     }
@@ -364,191 +337,149 @@ function drawFootprint(ctx, layer, scalefactor, footprint, padColor, padHoleColo
   // draw drawings
   for (var drawing of footprint.drawings) {
     if (drawing.layer == layer) {
-      drawDrawing(ctx, scalefactor, drawing.drawing, padColor);
+      drawDrawing(ctx, scalefactor, drawing.drawing, colors.pad);
     }
   }
+  ctx.lineWidth = 3 / scalefactor;
   // draw pads
   if (settings.renderPads) {
     for (var pad of footprint.pads) {
       if (pad.layers.includes(layer)) {
-        drawPad(ctx, pad, padColor, outline);
-        if (pad.pin1 && settings.highlightpin1) {
-          drawPad(ctx, pad, outlineColor, true);
+        drawPad(ctx, pad, colors.pad, outline);
+        if (pad.pin1 &&
+          (settings.highlightpin1 == "all" ||
+            settings.highlightpin1 == "selected" && highlight)) {
+          drawPad(ctx, pad, colors.outline, true);
         }
       }
     }
     for (var pad of footprint.pads) {
-      drawPadHole(ctx, pad, padHoleColor);
+      drawPadHole(ctx, pad, colors.padHole);
     }
   }
-}
-
-function drawCrosshair(canvas, x, y, scalefactor, color) {
-  if(!settings.showCrosshair) {
-    return;
-  }
-
-  var ctx = canvas.getContext("2d");
-
-  HTMLFormControlsCollection.log
-  
-  ctx.save();
-  ctx.globalAlpha = 0.75;
-  ctx.lineWidth = 2 / scalefactor;
-  ctx.strokeStyle = color;
-
-  // TODO: Should calculate a proper bbox for the view port.
-  const dummyOffset = 4000;
-
-  // horz line
-  ctx.beginPath();
-  ctx.moveTo(x - dummyOffset, y);
-  ctx.lineTo(x + dummyOffset, y);
-  ctx.stroke();
-
-  // vert line
-  ctx.beginPath();
-  ctx.moveTo(x, y - dummyOffset);
-  ctx.lineTo(x, y + dummyOffset);
-  ctx.stroke();
-
-  ctx.globalAlpha = 1;
-  ctx.restore();
 }
 
 function drawEdgeCuts(canvas, scalefactor) {
   var ctx = canvas.getContext("2d");
   var edgecolor = getComputedStyle(topmostdiv).getPropertyValue('--pcb-edge-color');
   for (var edge of pcbdata.edges) {
-    drawedge(ctx, scalefactor, edge, edgecolor);
+    drawDrawing(ctx, scalefactor, edge, edgecolor);
   }
-}
-
-function drawOrphanPads(canvas, layer, scalefactor, highlight, highlightedPads) {
-  if (!settings.renderPads) {
-    return;
-  }
-
-  highlightedPads = highlightedPads || [];
-
-  var ctx = canvas.getContext("2d");
-  ctx.save();
-  ctx.lineWidth = 3 / scalefactor;
-  var style = getComputedStyle(topmostdiv);
-  var padColor = style.getPropertyValue('--pad-color');
-  var padHoleColor = style.getPropertyValue('--pad-hole-color');  
-  if (highlight) {
-    padColor = style.getPropertyValue('--pad-color-highlight');
-    outlineColor = style.getPropertyValue('--pin1-outline-color-highlight');
-  }
-
-  var i = 0;
-  for (var pad of pcbdata.pads) {
-    if (pad.layers.includes(layer)) {
-      var outline = settings.renderDnpOutline;
-      if (!highlight || highlightedPads.includes(i)) {
-        drawPad(ctx, pad, padColor, outline); 
-      }     
-    }
-
-    i++;
-  }
-  
-  for (var pad of pcbdata.pads) {
-    drawPadHole(ctx, pad, padHoleColor);
-  }  
-
-  ctx.restore();
 }
 
 function drawFootprints(canvas, layer, scalefactor, highlight) {
   var ctx = canvas.getContext("2d");
-  ctx.save();
   ctx.lineWidth = 3 / scalefactor;
   var style = getComputedStyle(topmostdiv);
-  var padColor = style.getPropertyValue('--pad-color');
-  var padHoleColor = style.getPropertyValue('--pad-hole-color');
-  var outlineColor = style.getPropertyValue('--pin1-outline-color');
-  if (highlight) {
-    padColor = style.getPropertyValue('--pad-color-highlight');
-    outlineColor = style.getPropertyValue('--pin1-outline-color-highlight');
+
+  var colors = {
+    pad: style.getPropertyValue('--pad-color'),
+    padHole: style.getPropertyValue('--pad-hole-color'),
+    outline: style.getPropertyValue('--pin1-outline-color'),
   }
+
   for (var i = 0; i < pcbdata.footprints.length; i++) {
     var mod = pcbdata.footprints[i];
     var outline = settings.renderDnpOutline && pcbdata.bom.skipped.includes(i);
-    if (!highlight || highlightedFootprints.includes(i)) {
-      drawFootprint(ctx, layer, scalefactor, mod, padColor, padHoleColor, outlineColor, highlight, outline);
+    var h = highlightedFootprints.includes(i);
+    var d = markedFootprints.has(i);
+    if (highlight) {
+      if(h && d) {
+        colors.pad = style.getPropertyValue('--pad-color-highlight-both');
+        colors.outline = style.getPropertyValue('--pin1-outline-color-highlight-both');
+      } else if (h) {
+        colors.pad = style.getPropertyValue('--pad-color-highlight');
+        colors.outline = style.getPropertyValue('--pin1-outline-color-highlight');
+      } else if (d) {
+        colors.pad = style.getPropertyValue('--pad-color-highlight-marked');
+        colors.outline = style.getPropertyValue('--pin1-outline-color-highlight-marked');
+      }
+    }
+    if( h || d || !highlight) {
+      drawFootprint(ctx, layer, scalefactor, mod, colors, highlight, outline);
     }
   }
-  ctx.restore();
 }
 
 function drawBgLayer(layername, canvas, layer, scalefactor, edgeColor, polygonColor, textColor) {
   var ctx = canvas.getContext("2d");
   for (var d of pcbdata.drawings[layername][layer]) {
-    if (["segment", "arc", "circle", "curve", "rect","polyline"].includes(d.type)) {
+    if (["segment", "arc", "circle", "curve", "rect"].includes(d.type)) {
       drawedge(ctx, scalefactor, d, edgeColor);
     } else if (d.type == "polygon") {
-      drawPolygonShape(ctx, d, polygonColor);
-    } else if (d.type == "text") {
-      drawText(ctx, d, polygonColor);
+      drawPolygonShape(ctx, scalefactor, d, polygonColor);
+    } else {
+      drawText(ctx, d, textColor);
     }
   }
 }
 
-function drawTracks(canvas, layer, color, highlight) {
+function drawTracks(canvas, layer, defaultColor, highlight) {
   ctx = canvas.getContext("2d");
-  ctx.strokeStyle = color;
   ctx.lineCap = "round";
-  for(var track of pcbdata.tracks[layer]) {
-    if (highlight && highlightedNet != track.net) continue;
-    ctx.lineWidth = track.width;
 
-    if(track.type === 'polyline') {
-      drawPolylineShape(ctx,track,color);
-    } else if(track.type === 'polygon') {
-      drawPolygonShape(ctx, track, color);
-    } else if(track.type === 'text') {
-      drawText(ctx, track, color);
-    } else {
+  var hasHole = (track) => (
+    'drillsize' in track &&
+    track.start[0] == track.end[0] &&
+    track.start[1] == track.end[1]);
+
+  // First draw tracks and tented vias
+  for (var track of pcbdata.tracks[layer]) {
+    if (highlight && highlightedNet != track.net) continue;
+    if (!hasHole(track)) {
+      ctx.strokeStyle = highlight ? defaultColor : settings.netColors[track.net] || defaultColor;
+      ctx.lineWidth = track.width;
+      ctx.beginPath();
       if ('radius' in track) {
-        ctx.beginPath();
         ctx.arc(
-            ...track.center,
-            track.radius,
-            deg2rad(track.startangle),
-            deg2rad(track.endangle));
-        ctx.stroke();
-      } else if('start' in track && 'end' in track) {
-        ctx.beginPath();
+          ...track.center,
+          track.radius,
+          deg2rad(track.startangle),
+          deg2rad(track.endangle));
+      } else {
         ctx.moveTo(...track.start);
         ctx.lineTo(...track.end);
-        ctx.stroke();
       }
-      
+      ctx.stroke();
     }
+  }
+  // Second pass to draw untented vias
+  var style = getComputedStyle(topmostdiv);
+  var holeColor = style.getPropertyValue('--pad-hole-color')
 
+  for (var track of pcbdata.tracks[layer]) {
+    if (highlight && highlightedNet != track.net) continue;
+    if (hasHole(track)) {
+      ctx.strokeStyle = highlight ? defaultColor : settings.netColors[track.net] || defaultColor;
+      ctx.lineWidth = track.width;
+      ctx.beginPath();
+      ctx.moveTo(...track.start);
+      ctx.lineTo(...track.end);
+      ctx.stroke();
+      ctx.strokeStyle = holeColor;
+      ctx.lineWidth = track.drillsize;
+      ctx.lineTo(...track.end);
+      ctx.stroke();
+    }
   }
 }
 
-function drawZones(canvas, layer, color, highlight) {
+function drawZones(canvas, layer, defaultColor, highlight) {
   ctx = canvas.getContext("2d");
-  ctx.save();
-  ctx.strokeStyle = color;
-  ctx.fillStyle = color;
   ctx.lineJoin = "round";
-  for(var zone of pcbdata.zones[layer]) {
+  for (var zone of pcbdata.zones[layer]) {
+    if (highlight && highlightedNet != zone.net) continue;
+    ctx.strokeStyle = highlight ? defaultColor : settings.netColors[zone.net] || defaultColor;
+    ctx.fillStyle = highlight ? defaultColor : settings.netColors[zone.net] || defaultColor;
     if (!zone.path2d) {
       zone.path2d = getPolygonsPath(zone);
     }
-    if (highlight && highlightedNet != zone.net) continue;
-    ctx.fill(zone.path2d);
+    ctx.fill(zone.path2d, zone.fillrule || "nonzero");
     if (zone.width > 0) {
       ctx.lineWidth = zone.width;
       ctx.stroke(zone.path2d);
     }
   }
-  ctx.restore();
 }
 
 function clearCanvas(canvas, color = null) {
@@ -559,20 +490,21 @@ function clearCanvas(canvas, color = null) {
     ctx.fillStyle = color;
     ctx.fillRect(0, 0, canvas.width, canvas.height);
   } else {
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    if (!window.matchMedia("print").matches)
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
   }
   ctx.restore();
 }
 
 function drawNets(canvas, layer, highlight) {
   var style = getComputedStyle(topmostdiv);
-  if (settings.renderTracks) {
-    var trackColor = style.getPropertyValue(highlight ? '--track-color-highlight' : '--track-color');
-    drawTracks(canvas, layer, trackColor, highlight);
-  }
   if (settings.renderZones) {
     var zoneColor = style.getPropertyValue(highlight ? '--zone-color-highlight' : '--zone-color');
     drawZones(canvas, layer, zoneColor, highlight);
+  }
+  if (settings.renderTracks) {
+    var trackColor = style.getPropertyValue(highlight ? '--track-color-highlight' : '--track-color');
+    drawTracks(canvas, layer, trackColor, highlight);
   }
   if (highlight && settings.renderPads) {
     var padColor = style.getPropertyValue('--pad-color-highlight');
@@ -602,34 +534,11 @@ function drawHighlightsOnLayer(canvasdict, clear = true) {
   if (clear) {
     clearCanvas(canvasdict.highlight);
   }
-  
-  if (highlightedFootprints.length > 0) {
+  if (markedFootprints.size > 0 || highlightedFootprints.length > 0) {
     drawFootprints(canvasdict.highlight, canvasdict.layer,
       canvasdict.transform.s * canvasdict.transform.zoom, true);
   }
-
-  // Draw crosshairs
-  if (highlightedFootprints.length > 0) {
-    for(var i = 0; i < pcbdata.footprints.length; i++) {
-      const footprint = pcbdata.footprints[i];
-      if(highlightedFootprints.includes(i) && footprint.layer === canvasdict.layer) {
-        drawCrosshair(canvasdict.highlight, footprint.center[0], footprint.center[1], canvasdict.transform.s * canvasdict.transform.zoom, 'red');
-      }
-    }
-  }
-
   if (highlightedNet !== null) {
-    var highlightedPads = [];
-    for(var i = 0; i < pcbdata.pads.length; i++) {
-      var pad = pcbdata.pads[i];
-      if(pad.net === highlightedNet) {
-        highlightedPads.push(i);
-      }
-    }
-    
-    drawOrphanPads(canvasdict.highlight, canvasdict.layer,
-      canvasdict.transform.s * canvasdict.transform.zoom, true, highlightedPads);
-
     drawNets(canvasdict.highlight, canvasdict.layer, true);
   }
 }
@@ -647,12 +556,10 @@ function drawBackground(canvasdict, clear = true) {
   }
 
   drawNets(canvasdict.bg, canvasdict.layer, false);
+  drawFootprints(canvasdict.bg, canvasdict.layer,
+    canvasdict.transform.s * canvasdict.transform.zoom, false);
 
-  drawOrphanPads(canvasdict.bg, canvasdict.layer, canvasdict.transform.s * canvasdict.transform.zoom, false);
-
-  drawFootprints(canvasdict.bg, canvasdict.layer, canvasdict.transform.s * canvasdict.transform.zoom, false);
-
-  drawEdgeCuts(canvasdict.bg, canvasdict.transform.s);
+  drawEdgeCuts(canvasdict.bg, canvasdict.transform.s * canvasdict.transform.zoom);
 
   var style = getComputedStyle(topmostdiv);
   var edgeColor = style.getPropertyValue('--silkscreen-edge-color');
@@ -678,19 +585,18 @@ function drawBackground(canvasdict, clear = true) {
 function prepareCanvas(canvas, flip, transform) {
   var ctx = canvas.getContext("2d");
   ctx.setTransform(1, 0, 0, 1, 0, 0);
-  var fontsize = 1.55;
   ctx.scale(transform.zoom, transform.zoom);
   ctx.translate(transform.panx, transform.pany);
   if (flip) {
     ctx.scale(-1, 1);
   }
   ctx.translate(transform.x, transform.y);
-  ctx.rotate(deg2rad(settings.boardRotation));
+  ctx.rotate(deg2rad(settings.boardRotation + (flip && settings.offsetBackRotation ? - 180 : 0)));
   ctx.scale(transform.s, transform.s);
 }
 
 function prepareLayer(canvasdict) {
-  var flip = (canvasdict.layer == "B");
+  var flip = (canvasdict.layer === "B");
   for (var c of ["bg", "fab", "silk", "highlight"]) {
     prepareCanvas(canvasdict[c], flip, canvasdict.transform);
   }
@@ -704,14 +610,14 @@ function rotateVector(v, angle) {
   ];
 }
 
-function applyRotation(bbox) {
+function applyRotation(bbox, flip) {
   var corners = [
     [bbox.minx, bbox.miny],
     [bbox.minx, bbox.maxy],
     [bbox.maxx, bbox.miny],
     [bbox.maxx, bbox.maxy],
   ];
-  corners = corners.map((v) => rotateVector(v, settings.boardRotation));
+  corners = corners.map((v) => rotateVector(v, settings.boardRotation + (flip && settings.offsetBackRotation ? - 180 : 0)));
   return {
     minx: corners.reduce((a, v) => Math.min(a, v[0]), Infinity),
     miny: corners.reduce((a, v) => Math.min(a, v[1]), Infinity),
@@ -721,7 +627,8 @@ function applyRotation(bbox) {
 }
 
 function recalcLayerScale(layerdict, width, height) {
-  var bbox = applyRotation(pcbdata.edges_bbox);
+  var flip = (layerdict.layer === "B");
+  var bbox = applyRotation(pcbdata.edges_bbox, flip);
   var scalefactor = 0.98 * Math.min(
     width / (bbox.maxx - bbox.minx),
     height / (bbox.maxy - bbox.miny)
@@ -730,7 +637,6 @@ function recalcLayerScale(layerdict, width, height) {
     scalefactor = 1;
   }
   layerdict.transform.s = scalefactor;
-  var flip = (layerdict.layer == "B");
   if (flip) {
     layerdict.transform.x = -((bbox.maxx + bbox.minx) * scalefactor + width) * 0.5;
   } else {
@@ -801,14 +707,14 @@ function pointWithinDistanceToSegment(x, y, x1, y1, x2, y2, d) {
 }
 
 function modulo(n, mod) {
-  return ((n % mod) + mod ) % mod;
+  return ((n % mod) + mod) % mod;
 }
 
 function pointWithinDistanceToArc(x, y, xc, yc, radius, startangle, endangle, d) {
   var dx = x - xc;
   var dy = y - yc;
   var r_sq = dx * dx + dy * dy;
-  var rmin = Math.max(0, radius-d);
+  var rmin = Math.max(0, radius - d);
   var rmax = radius + d;
 
   if (r_sq < rmin * rmin || r_sq > rmax * rmax)
@@ -835,7 +741,7 @@ function pointWithinDistanceToArc(x, y, xc, yc, radius, startangle, endangle, d)
 
 function pointWithinPad(x, y, pad) {
   var v = [x - pad.pos[0], y - pad.pos[1]];
-  v = rotateVector(v, -pad.angle);
+  v = rotateVector(v, pad.angle);
   if (pad.offset) {
     v[0] -= pad.offset[0];
     v[1] -= pad.offset[1];
@@ -844,37 +750,14 @@ function pointWithinPad(x, y, pad) {
 }
 
 function netHitScan(layer, x, y) {
-  // TODO: Should be refactored
-
   // Check track segments
   if (settings.renderTracks && pcbdata.tracks) {
-    for(var track of pcbdata.tracks[layer]) {
-      if(track.type === 'polyline') {
-        const path = getPolygonsPath(track);
-        if(path) {
-          hitTestContext2d.save();
-          hitTestContext2d.lineWidth = track.width;
-          
-          if(hitTestContext2d.isPointInStroke(path,x,y)) {
-            hitTestContext2d.restore();
-            return track.net;            
-          }
-          
-          hitTestContext2d.restore();          
-        }        
-
-      } else if(track.type === 'polygon') {
-        const path = getPolygonsPath(track);
-        if(path && hitTestContext2d.isPointInPath(path,x,y)) {          
-          return track.net;                      
-        }                     
-      } else if(track.type === 'text') {
-        // TODO: To implement taking in account TrueType fonts.
-      } else if ('radius' in track) {
+    for (var track of pcbdata.tracks[layer]) {
+      if ('radius' in track) {
         if (pointWithinDistanceToArc(x, y, ...track.center, track.radius, track.startangle, track.endangle, track.width / 2)) {
           return track.net;
         }
-      } else if('start' in track && 'end' in track) {
+      } else {
         if (pointWithinDistanceToSegment(x, y, ...track.start, ...track.end, track.width / 2)) {
           return track.net;
         }
@@ -883,20 +766,11 @@ function netHitScan(layer, x, y) {
   }
   // Check pads
   if (settings.renderPads) {
-
-    // Footprints containing pads
     for (var footprint of pcbdata.footprints) {
-      for(var pad of footprint.pads) {
+      for (var pad of footprint.pads) {
         if (pad.layers.includes(layer) && pointWithinPad(x, y, pad)) {
           return pad.net;
         }
-      }
-    }
-
-    // Orphan pads
-    for(var pad of pcbdata.pads) {
-      if (pad.layers.includes(layer) && pointWithinPad(x, y, pad)) {
-        return pad.net;
       }
     }
   }
@@ -907,7 +781,7 @@ function pointWithinFootprintBbox(x, y, bbox) {
   var v = [x - bbox.pos[0], y - bbox.pos[1]];
   v = rotateVector(v, bbox.angle);
   return bbox.relpos[0] <= v[0] && v[0] <= bbox.relpos[0] + bbox.size[0] &&
-         bbox.relpos[1] <= v[1] && v[1] <= bbox.relpos[1] + bbox.size[1];
+    bbox.relpos[1] <= v[1] && v[1] <= bbox.relpos[1] + bbox.size[1];
 }
 
 function bboxHitScan(layer, x, y) {
@@ -954,13 +828,14 @@ function handleMouseClick(e, layerdict) {
   var x = e.offsetX;
   var y = e.offsetY;
   var t = layerdict.transform;
-  if (layerdict.layer == "B") {
+  var flip = layerdict.layer === "B";
+  if (flip) {
     x = (devicePixelRatio * x / t.zoom - t.panx + t.x) / -t.s;
   } else {
     x = (devicePixelRatio * x / t.zoom - t.panx - t.x) / t.s;
   }
   y = (devicePixelRatio * y / t.zoom - t.y - t.pany) / t.s;
-  var v = rotateVector([x, y], -settings.boardRotation);
+  var v = rotateVector([x, y], -settings.boardRotation + (flip && settings.offsetBackRotation ? - 180 : 0));
   if ("nets" in pcbdata) {
     var net = netHitScan(layerdict.layer, ...v);
     if (net !== highlightedNet) {
@@ -1067,9 +942,9 @@ function handlePointerMove(e, layerdict) {
     var otherPtr = Object.values(layerdict.pointerStates).filter((ptr) => ptr != thisPtr)[0];
 
     var oldDist = Math.sqrt(Math.pow(thisPtr.lastX - otherPtr.lastX, 2) + Math.pow(thisPtr.lastY - otherPtr.lastY, 2));
-    var newDist = Math.sqrt(Math.pow(e.offsetX - otherPtr.lastX, 2)     + Math.pow(e.offsetY - otherPtr.lastY, 2));
+    var newDist = Math.sqrt(Math.pow(e.offsetX - otherPtr.lastX, 2) + Math.pow(e.offsetY - otherPtr.lastY, 2));
 
-    var scaleFactor = newDist/oldDist;
+    var scaleFactor = newDist / oldDist;
 
     if (scaleFactor != NaN) {
       layerdict.transform.zoom *= scaleFactor;
@@ -1145,15 +1020,16 @@ function setRedrawOnDrag(value) {
   writeStorage("redrawOnDrag", value);
 }
 
-function setShowCrosshair(value) {
-  settings.showCrosshair = value;
-  writeStorage("showCrosshair", value);
-}
-
 function setBoardRotation(value) {
   settings.boardRotation = value * 5;
   writeStorage("boardRotation", settings.boardRotation);
   document.getElementById("rotationDegree").textContent = settings.boardRotation;
+  resizeAll();
+}
+
+function setOffsetBackRotation(value) {
+  settings.offsetBackRotation = value;
+  writeStorage("offsetBackRotation", value);
   resizeAll();
 }
 

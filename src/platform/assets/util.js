@@ -1,97 +1,45 @@
 /* Utility functions */
 
-var storagePrefix = 'ibom__' + pcbdata.metadata.title + '__' +
+var storagePrefix = 'KiCad_HTML_BOM__' + pcbdata.metadata.title + '__' +
   pcbdata.metadata.revision + '__#';
-
-function buildKeyForLocalStorageDict() {  
-  return storagePrefix;
-}
-
 var storage;
-var _isLocalStorageUsed = false;
 
 function initStorage(key) {
   try {
     window.localStorage.getItem("blank");
-    storage = window.localStorage;    
-    _isLocalStorageUsed = true;
+    storage = window.localStorage;
   } catch (e) {
     // localStorage not available
   }
   if (!storage) {
     try {
       window.sessionStorage.getItem("blank");
-      storage = window.sessionStorage;      
+      storage = window.sessionStorage;
     } catch (e) {
       // sessionStorage also not available
     }
   }
 }
 
-
-
 function readStorage(key) {
-  if(!storage) {
+  if (storage) {
+    return storage.getItem(storagePrefix + key);
+  } else {
     return null;
   }
-
-  if(!_isLocalStorageUsed) {    
-    return storage.getItem(storagePrefix + key);
-  }
-
-  try {
-    var dictKey = buildKeyForLocalStorageDict();
-    var obj = JSON.parse(storage.getItem(dictKey));    
-    if(!obj || !obj.hasOwnProperty(key)) {
-      return null;
-    }
-
-    return JSON.parse(storage.getItem(dictKey))[key];
-  } catch(e) {
-    console.log('[ibom]: Unable to obtain a value from local storage!');
-    console.log(e);
-  }
-  
-  // Original implementation
-  // return storage.getItem(storagePrefix + key);
 }
 
-
 function writeStorage(key, value) {
-  if(!storage) {
-    return;
-  }
-
-  if(!_isLocalStorageUsed) {
+  if (storage) {
     storage.setItem(storagePrefix + key, value);
-    return;
   }
-
-  try {
-    var dictKey = buildKeyForLocalStorageDict();
-    if(!storage.getItem(dictKey)) {
-      storage.setItem(dictKey,JSON.stringify({
-        _storagePrefix: storagePrefix
-      }));
-    }
-
-    var obj = JSON.parse(storage.getItem(dictKey));
-    obj[key] = value;
-    storage.setItem(dictKey,JSON.stringify(obj));            
-  } catch(e) {
-    console.log('[ibom]: Unable to write key to local storage!');
-    console.log(e);
-  }
-  
-  // Original implementation
-  // storage.setItem(storagePrefix + key, value);
 }
 
 function fancyDblClickHandler(el, onsingle, ondouble) {
-  return function() {
+  return function () {
     if (el.getAttribute("data-dblclick") == null) {
       el.setAttribute("data-dblclick", 1);
-      setTimeout(function() {
+      setTimeout(function () {
         if (el.getAttribute("data-dblclick") == 1) {
           onsingle();
         }
@@ -118,53 +66,78 @@ function focusInputField(input) {
   input.select();
 }
 
-function copyToClipboard() {
+function saveBomTable(output) {
   var text = '';
   for (var node of bomhead.childNodes[0].childNodes) {
     if (node.firstChild) {
-      text = text + node.firstChild.nodeValue;
+      text += (output == 'csv' ? `"${node.firstChild.nodeValue}"` : node.firstChild.nodeValue);
     }
     if (node != bomhead.childNodes[0].lastChild) {
-      text += '\t';
+      text += (output == 'csv' ? ',' : '\t');
     }
   }
   text += '\n';
   for (var row of bombody.childNodes) {
     for (var cell of row.childNodes) {
+      let val = '';
       for (var node of cell.childNodes) {
         if (node.nodeName == "INPUT") {
           if (node.checked) {
-            text = text + '✓';
+            val += '✓';
           }
-        } else if (node.nodeName == "MARK") {
-          text = text + node.firstChild.nodeValue;
+        } else if ((node.nodeName == "MARK") || (node.nodeName == "A")) {
+          val += node.firstChild.nodeValue;
         } else {
-          text = text + node.nodeValue;
+          val += node.nodeValue;
         }
       }
+      if (output == 'csv') {
+        val = val.replace(/\"/g, '\"\"'); // pair of double-quote characters
+        if (isNumeric(val)) {
+          val = +val;                     // use number
+        } else {
+          val = `"${val}"`;               // enclosed within double-quote
+        }
+      }
+      text += val;
       if (cell != row.lastChild) {
-        text += '\t';
+        text += (output == 'csv' ? ',' : '\t');
       }
     }
     text += '\n';
   }
-  var textArea = document.createElement("textarea");
-  textArea.classList.add('clipboard-temp');
-  textArea.value = text;
 
-  document.body.appendChild(textArea);
-  textArea.focus();
-  textArea.select();
+  if (output != 'clipboard') {
+    // To file: csv or txt
+    var blob = new Blob([text], {
+      type: `text/${output}`
+    });
+    saveFile(`${pcbdata.metadata.title}.${output}`, blob);
+  } else {
+    // To clipboard
+    var textArea = document.createElement("textarea");
+    textArea.classList.add('clipboard-temp');
+    textArea.value = text;
 
-  try {
-    if (document.execCommand('copy')) {
-      console.log('Bom copied to clipboard.');
+    document.body.appendChild(textArea);
+    textArea.focus();
+    textArea.select();
+
+    try {
+      if (document.execCommand('copy')) {
+        console.log('Bom copied to clipboard.');
+      }
+    } catch (err) {
+      console.log('Can not copy to clipboard.');
     }
-  } catch (err) {
-    console.log('Can not copy to clipboard.');
-  }
 
-  document.body.removeChild(textArea);
+    document.body.removeChild(textArea);
+  }
+}
+
+function isNumeric(str) {
+  /* https://stackoverflow.com/a/175787 */
+  return (typeof str != "string" ? false : !isNaN(str) && !isNaN(parseFloat(str)));
 }
 
 function removeGutterNode(node) {
@@ -198,7 +171,7 @@ var units = {
     "FARAD", "Farad", "farad",
     "HENRY", "Henry", "henry"
   ],
-  getMultiplier: function(s) {
+  getMultiplier: function (s) {
     if (this.prefixes.giga.includes(s)) return 1e9;
     if (this.prefixes.mega.includes(s)) return 1e6;
     if (this.prefixes.kilo.includes(s)) return 1e3;
@@ -213,25 +186,27 @@ var units = {
 
 function initUtils() {
   var allPrefixes = units.prefixes.giga
-                    .concat(units.prefixes.mega)
-                    .concat(units.prefixes.kilo)
-                    .concat(units.prefixes.milli)
-                    .concat(units.prefixes.micro)
-                    .concat(units.prefixes.nano)
-                    .concat(units.prefixes.pico);
+    .concat(units.prefixes.mega)
+    .concat(units.prefixes.kilo)
+    .concat(units.prefixes.milli)
+    .concat(units.prefixes.micro)
+    .concat(units.prefixes.nano)
+    .concat(units.prefixes.pico);
   var allUnits = units.unitsShort.concat(units.unitsLong);
   units.valueRegex = new RegExp("^([0-9\.]+)" +
-                         "\\s*(" + allPrefixes.join("|") + ")?" +
-                         "(" + allUnits.join("|") + ")?" +
-                         "(\\b.*)?$", "");
+    "\\s*(" + allPrefixes.join("|") + ")?" +
+    "(" + allUnits.join("|") + ")?" +
+    "(\\b.*)?$", "");
   units.valueAltRegex = new RegExp("^([0-9]*)" +
-                         "(" + units.unitsShort.join("|") + ")?" +
-                         "([GgMmKkUuNnPp])?" +
-                         "([0-9]*)" +
-                         "(\\b.*)?$", "");
-  for (var bom_type of ["both", "F", "B"]) {
-    for (var row of pcbdata.bom[bom_type]) {
-      row.push(parseValue(row[1], row[3][0][0]));
+    "(" + units.unitsShort.join("|") + ")?" +
+    "([GgMmKkUuNnPp])?" +
+    "([0-9]*)" +
+    "(\\b.*)?$", "");
+  if (config.fields.includes("Value")) {
+    var index = config.fields.indexOf("Value");
+    pcbdata.bom["parsedValues"] = {};
+    for (var id in pcbdata.bom.fields) {
+      pcbdata.bom.parsedValues[id] = parseValue(pcbdata.bom.fields[id][index])
     }
   }
 }
@@ -375,7 +350,9 @@ function saveSettings() {
     pcbmetadata: pcbdata.metadata,
     settings: settings,
   }
-  var blob = new Blob([JSON.stringify(data, null, 4)], {type: "application/json"});
+  var blob = new Blob([JSON.stringify(data, null, 4)], {
+    type: "application/json"
+  });
   saveFile(`${pcbdata.metadata.title}.settings.json`, blob);
 }
 
@@ -383,7 +360,7 @@ function loadSettings() {
   var input = document.createElement("input");
   input.type = "file";
   input.accept = ".settings.json";
-  input.onchange = function(e) {
+  input.onchange = function (e) {
     var file = e.target.files[0];
     var reader = new FileReader();
     reader.onload = readerEvent => {
@@ -391,7 +368,7 @@ function loadSettings() {
       var newSettings;
       try {
         newSettings = JSON.parse(content);
-      } catch(e) {
+      } catch (e) {
         alert("Selected file is not InteractiveHtmlBom settings file.");
         return;
       }
@@ -425,8 +402,24 @@ function loadSettings() {
   input.click();
 }
 
-function overwriteSettings(newSettings) {
+function resetSettings() {
+  if (!confirm(
+    `This will reset all checkbox states and other settings.\n\n` +
+    `Press OK if you want to continue.`)) {
+    return;
+  }
+  if (storage) {
+    var keys = [];
+    for (var i = 0; i < storage.length; i++) {
+      var key = storage.key(i);
+      if (key.startsWith(storagePrefix)) keys.push(key);
+    }
+    for (var key of keys) storage.removeItem(key);
+  }
+  location.reload();
+}
 
+function overwriteSettings(newSettings) {
   initDone = false;
   Object.assign(settings, newSettings);
   writeStorage("bomlayout", settings.bomlayout);
@@ -437,7 +430,7 @@ function overwriteSettings(newSettings) {
   for (var checkbox of settings.checkboxes) {
     writeStorage("checkbox_" + checkbox, settings.checkboxStoredRefs[checkbox]);
   }
-  writeStorage("darkenWhenChecked", settings.darkenWhenChecked);
+  writeStorage("markWhenChecked", settings.markWhenChecked);
   padsVisible(settings.renderPads);
   document.getElementById("padsCheckbox").checked = settings.renderPads;
   fabricationVisible(settings.renderFabrication);
@@ -456,15 +449,15 @@ function overwriteSettings(newSettings) {
   document.getElementById("dnpOutlineCheckbox").checked = settings.renderDnpOutline;
   setRedrawOnDrag(settings.redrawOnDrag);
   document.getElementById("dragCheckbox").checked = settings.redrawOnDrag;
-  setShowCrosshair(settings.showCrosshair);
-  document.getElementById("crosshairCheckbox").checked = settings.showCrosshair;
   setDarkMode(settings.darkMode);
   document.getElementById("darkmodeCheckbox").checked = settings.darkMode;
   setHighlightPin1(settings.highlightpin1);
-  document.getElementById("highlightpin1Checkbox").checked = settings.highlightpin1;
+  document.forms.highlightpin1.highlightpin1.value = settings.highlightpin1;
   writeStorage("boardRotation", settings.boardRotation);
   document.getElementById("boardRotation").value = settings.boardRotation / 5;
   document.getElementById("rotationDegree").textContent = settings.boardRotation;
+  setOffsetBackRotation(settings.offsetBackRotation);
+  document.getElementById("offsetBackRotationCheckbox").checked = settings.offsetBackRotation;
   initDone = true;
   prepCheckboxes();
   changeBomLayout(settings.bomlayout);
@@ -479,24 +472,30 @@ function saveFile(filename, blob) {
 }
 
 function dataURLtoBlob(dataurl) {
-  var arr = dataurl.split(','), mime = arr[0].match(/:(.*?);/)[1],
-      bstr = atob(arr[1]), n = bstr.length, u8arr = new Uint8Array(n);
-  while(n--){
-      u8arr[n] = bstr.charCodeAt(n);
+  var arr = dataurl.split(','),
+    mime = arr[0].match(/:(.*?);/)[1],
+    bstr = atob(arr[1]),
+    n = bstr.length,
+    u8arr = new Uint8Array(n);
+  while (n--) {
+    u8arr[n] = bstr.charCodeAt(n);
   }
-  return new Blob([u8arr], {type:mime});
+  return new Blob([u8arr], {
+    type: mime
+  });
 }
 
 var settings = {
-  canvaslayout: "default",
-  bomlayout: "default",
+  canvaslayout: "FB",
+  bomlayout: "left-right",
   bommode: "grouped",
   checkboxes: [],
   checkboxStoredRefs: {},
   darkMode: false,
-  highlightpin1: false,
+  highlightpin1: "none",
   redrawOnDrag: true,
   boardRotation: 0,
+  offsetBackRotation: false,
   renderPads: true,
   renderReferences: true,
   renderValues: true,
@@ -505,6 +504,9 @@ var settings = {
   renderDnpOutline: false,
   renderTracks: true,
   renderZones: true,
+  columnOrder: [],
+  hiddenColumns: [],
+  netColors: {},
 }
 
 function initDefaults() {
@@ -517,6 +519,9 @@ function initDefaults() {
   }
   settings.bommode = readStorage("bommode");
   if (settings.bommode === null) {
+    settings.bommode = "grouped";
+  }
+  if (settings.bommode == "netlist" && !pcbdata.nets) {
     settings.bommode = "grouped";
   }
   if (!["grouped", "ungrouped", "netlist"].includes(settings.bommode)) {
@@ -533,15 +538,21 @@ function initDefaults() {
   settings.checkboxes = bomCheckboxes.split(",").filter((e) => e);
   document.getElementById("bomCheckboxes").value = bomCheckboxes;
 
-  settings.darkenWhenChecked = readStorage("darkenWhenChecked") || "";
-  populateDarkenWhenCheckedOptions();
+  var highlightpin1 = readStorage("highlightpin1") || config.highlight_pin1;
+  if (highlightpin1 === "false") highlightpin1 = "none";
+  if (highlightpin1 === "true") highlightpin1 = "all";
+  setHighlightPin1(highlightpin1);
+  document.forms.highlightpin1.highlightpin1.value = highlightpin1;
 
-  function initBooleanSetting(storageString, def, elementId, func) {    
+  settings.markWhenChecked = readStorage("markWhenChecked") || "";
+  populateMarkWhenCheckedOptions();
+
+  function initBooleanSetting(storageString, def, elementId, func) {
     var b = readStorage(storageString);
     if (b === null) {
       b = def;
     } else {
-      b = (b === true);
+      b = (b == "true");
     }
     document.getElementById(elementId).checked = b;
     func(b);
@@ -551,7 +562,7 @@ function initDefaults() {
   initBooleanSetting("fabricationVisible", config.show_fabrication, "fabricationCheckbox", fabricationVisible);
   initBooleanSetting("silkscreenVisible", config.show_silkscreen, "silkscreenCheckbox", silkscreenVisible);
   initBooleanSetting("referencesVisible", true, "referencesCheckbox", referencesVisible);
-  initBooleanSetting("valuesVisible", false, "valuesCheckbox", valuesVisible);
+  initBooleanSetting("valuesVisible", true, "valuesCheckbox", valuesVisible);
   if ("tracks" in pcbdata) {
     initBooleanSetting("tracksVisible", true, "tracksCheckbox", tracksVisible);
     initBooleanSetting("zonesVisible", true, "zonesCheckbox", zonesVisible);
@@ -562,9 +573,25 @@ function initDefaults() {
   }
   initBooleanSetting("dnpOutline", false, "dnpOutlineCheckbox", dnpOutline);
   initBooleanSetting("redrawOnDrag", config.redraw_on_drag, "dragCheckbox", setRedrawOnDrag);
-  initBooleanSetting("showCrosshair", config.show_crosshair, "crosshairCheckbox", setShowCrosshair);
   initBooleanSetting("darkmode", config.dark_mode, "darkmodeCheckbox", setDarkMode);
-  initBooleanSetting("highlightpin1", config.highlight_pin1, "highlightpin1Checkbox", setHighlightPin1);
+
+  var fields = ["checkboxes", "References"].concat(config.fields).concat(["Quantity"]);
+  var hcols = JSON.parse(readStorage("hiddenColumns"));
+  if (hcols === null) {
+    hcols = [];
+  }
+  settings.hiddenColumns = hcols.filter(e => fields.includes(e));
+
+  var cord = JSON.parse(readStorage("columnOrder"));
+  if (cord === null) {
+    cord = fields;
+  } else {
+    cord = cord.filter(e => fields.includes(e));
+    if (cord.length != fields.length)
+      cord = fields;
+  }
+  settings.columnOrder = cord;
+
   settings.boardRotation = readStorage("boardRotation");
   if (settings.boardRotation === null) {
     settings.boardRotation = config.board_rotation * 5;
@@ -573,6 +600,9 @@ function initDefaults() {
   }
   document.getElementById("boardRotation").value = settings.boardRotation / 5;
   document.getElementById("rotationDegree").textContent = settings.boardRotation;
+  initBooleanSetting("offsetBackRotation", config.offset_back_rotation, "offsetBackRotationCheckbox", setOffsetBackRotation);
+
+  settings.netColors = JSON.parse(readStorage("netColors")) || {};
 }
 
 // Helper classes for user js callbacks.
@@ -586,22 +616,22 @@ const IBOM_EVENT_TYPES = {
 
 const EventHandler = {
   callbacks: {},
-  init: function() {
+  init: function () {
     for (eventType of Object.values(IBOM_EVENT_TYPES))
       this.callbacks[eventType] = [];
   },
-  registerCallback: function(eventType, callback) {
+  registerCallback: function (eventType, callback) {
     this.callbacks[eventType].push(callback);
   },
-  emitEvent: function(eventType, eventArgs) {
+  emitEvent: function (eventType, eventArgs) {
     event = {
       eventType: eventType,
       args: eventArgs,
     }
     var callback;
-    for(callback of this.callbacks[eventType])
+    for (callback of this.callbacks[eventType])
       callback(event);
-    for(callback of this.callbacks[IBOM_EVENT_TYPES.ALL])
+    for (callback of this.callbacks[IBOM_EVENT_TYPES.ALL])
       callback(event);
   }
 }

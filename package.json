@@ -1,11 +1,11 @@
 {
   "name": "easyeda-ibom-extension",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "",
   "scripts": {
-    "build": "webpack --mode production",
-    "start": "webpack --mode development --watch --env LIVE_RELOAD=yes",
-    "build-live": "webpack --mode production --env LIVE_RELOAD=yes",
+    "build": "set NODE_OPTIONS=--openssl-legacy-provider && webpack --mode production",
+    "start": "set NODE_OPTIONS=--openssl-legacy-provider && webpack --mode development --watch --env LIVE_RELOAD=yes",
+    "build-live": "set NODE_OPTIONS=--openssl-legacy-provider && webpack --mode production --env LIVE_RELOAD=yes",
     "live-reload": "npx ./scripts/start-live-reload.js",
     "bump:patch": "npm version --no-git-tag-version patch",
     "bump:minor": "npm version --no-git-tag-version minor",

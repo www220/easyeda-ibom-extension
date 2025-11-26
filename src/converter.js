@@ -100,7 +100,8 @@ const parseTracks = (data, layerType) => {
       type: 'polyline',
       net: track.net,
       start: [0,0], end: [0,0], // Dummy to keep ibom happy.
-      width: track.strokeWidth,
+      thickness: parseFloat(track.strokeWidth),
+      width: parseFloat(track.strokeWidth),
       svgpath: d
     }
   });
@@ -122,7 +123,7 @@ const parseArcs = (data, layerType) => {
     if (arc.d) {
       return {
         type: "arc",
-        width: arc.strokeWidth,
+        width: parseFloat(arc.strokeWidth),
         svgpath: arc.d,
         net: arc.net
       };
@@ -143,7 +144,7 @@ const parseCircles = (data, layerType) => {
       _svgpath: path, // This path is used in bbox calculation routine only.
       start: [circle.cx, circle.cy],
       radius: circle.r,
-      width: circle.strokeWidth,
+      width: parseFloat(circle.strokeWidth),
       net: circle.net
     }
   });
@@ -172,7 +173,7 @@ const parseTexts = (data, layerType, ignoreSpecialText = false) => {
       return;
     }
 
-    if (isRef && obj.display === 'none') {
+    if ((isRef || isVal) && obj.display === 'none') {
       return;
     }
 
@@ -242,7 +243,7 @@ const parsePads = (data) => {
         return 'oval';
 
       case 'POLYGON':
-         return 'polygon';
+         return 'custom';
 
       default:
         {
@@ -296,7 +297,7 @@ const parsePads = (data) => {
       drillsize: [holeD, isSlot ? parseFloat(pad.holeLength) : holeD],
       drillshape: isSlot ? 'oblong' : undefined,
       holeCenterPoint: parseHoleCenterPoint(pad),      
-      polygon: pad.pointArr,
+      polygons: [_.map(pad.pointArr,(point) => {return [point.x,point.y];})],
       net: pad.net
     };
   });
@@ -556,17 +557,26 @@ const parseBom = (data, easyBom) => {
   });
 
   const buildRows = (footprintsMetadata, layers) => {
-    const both = _.groupBy(_.filter(footprintsMetadata, meta => _.includes(layers,meta.layer)),obj => `${obj.value}+${obj.meta}`);    
+    const both = _.groupBy(_.filter(footprintsMetadata, meta => _.includes(layers,meta.layer)),obj => `${obj.value}+${obj.package}`);    
     return _.map(both,(footprints) => {
-      const value = footprints[0].value; // FIXME: Need a guard here!
-      const pkg = footprints[0].package; // FIXME: Need a guard here!
-      return [footprints.length, value, pkg,_.map(footprints,(fpt) => {
+      return _.map(footprints,(fpt) => {
         return [fpt.ref,fpt.id];
-      }),buildCustomValuesList(fetchEasyBOMRowCustomParams(value,pkg))];
+      });
     });
   };
 
+  const buildFields = (footprintsMetadata, layers) => {
+    const both = _.groupBy(_.filter(footprintsMetadata, meta => _.includes(layers,meta.layer)),obj => `${obj.value}+${obj.package}`);    
+    return _.reduce(both,(obj, footprints) => {
+      _.forEach(footprints,(fpt) => {
+        obj[fpt.id] = [fpt.value,fpt.package]
+      });
+      return obj;
+    }, {});
+  };
+
   const rows = buildRows(footprintsMetadata,['F','B']);  
+  const fields = buildFields(footprintsMetadata,['F','B']);  
   const customColumnsContainingData = _.compact(_.map(customColumns,(column, index) => {
     const columnHasData = _.some(rows,(row) => {
       const values = _.last(row);
@@ -582,6 +592,7 @@ const parseBom = (data, easyBom) => {
 
   return {
     both: rows,
+    fields: fields,
     F:  buildRows(footprintsMetadata,['F']),
     B:  buildRows(footprintsMetadata,['B']),
     skipped: [],
@@ -591,7 +602,7 @@ const parseBom = (data, easyBom) => {
 
 export const convert = (source, meta, easyBom) => {
   return {
-    ibom_version: 'v2.3-50-g53ae\n',
+    ibom_version: 'v2.10.0\n',
     edges_bbox: parseEasyBBox(source.BBox),
     edges: parseBoardEdges(source),
     drawings: {
