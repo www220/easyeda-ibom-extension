@@ -604,7 +604,7 @@ const parseBom = (data, easyBom) => {
 
 export const convert = (source, meta, easyBom) => {
   return {
-    ibom_version: 'v2.10.0\n',
+    ibom_version: 'v2.10.0',
     edges_bbox: parseEasyBBox(source.BBox),
     edges: parseBoardEdges(source),
     drawings: {

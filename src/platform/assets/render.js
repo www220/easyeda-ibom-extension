@@ -399,6 +399,19 @@ function drawFootprints(canvas, layer, scalefactor, highlight) {
       drawFootprint(ctx, layer, scalefactor, mod, colors, highlight, outline);
     }
   }
+
+  if (settings.renderPads) {
+    colors.pad = style.getPropertyValue('--pad-color');
+    colors.outline = style.getPropertyValue('--pad-hole-color');
+    for (var pad of pcbdata.pads) {
+      if (pad.layers.includes(layer)) {
+        drawPad(ctx, pad, colors.pad, false);
+      }
+    }
+    for (var pad of pcbdata.pads) {
+      drawPadHole(ctx, pad, colors.padHole);
+    }
+  }
 }
 
 function drawBgLayer(layername, canvas, layer, scalefactor, edgeColor, polygonColor, textColor) {
@@ -535,6 +548,22 @@ function drawNets(canvas, layer, highlight) {
         for (var pad of footprint.pads) {
           drawPadHole(ctx, pad, padHoleColor);
         }
+      }
+    }
+
+    // draw pads
+    var padDrawn = false;
+    for (var pad of pcbdata.pads) {
+      if (highlightedNet != pad.net) continue;
+      if (pad.layers.includes(layer)) {
+        drawPad(ctx, pad, padColor, false);
+        padDrawn = true;
+      }
+    }
+    if (padDrawn) {
+      // redraw all pad holes because some pads may overlap
+      for (var pad of pcbdata.pads) {
+        drawPadHole(ctx, pad, padHoleColor);
       }
     }
   }
