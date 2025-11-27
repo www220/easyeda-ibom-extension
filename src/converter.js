@@ -123,6 +123,7 @@ const parseArcs = (data, layerType) => {
     if (arc.d) {
       return {
         type: "arc",
+        thickness: parseFloat(arc.strokeWidth),
         width: parseFloat(arc.strokeWidth),
         svgpath: arc.d,
         net: arc.net
@@ -144,6 +145,7 @@ const parseCircles = (data, layerType) => {
       _svgpath: path, // This path is used in bbox calculation routine only.
       start: [circle.cx, circle.cy],
       radius: circle.r,
+      thickness: parseFloat(circle.strokeWidth),
       width: parseFloat(circle.strokeWidth),
       net: circle.net
     }
@@ -290,14 +292,14 @@ const parsePads = (data) => {
       layers: mapLayerType(pad.layerid),
       pos: [pad.x,pad.y],
       size: [pad.width,pad.height],
-      angle: - parseFloat(pad.rotation),
+      angle: pad.shape === 'POLYGON' ? 0 : -parseFloat(pad.rotation),
       pin1: pad.number === '1' ? 1 : undefined,
       shape: mapShape(pad.shape),
       type: pad.layerid === LayerType.MultiLayer ? 'th' : 'smd',
       drillsize: [holeD, isSlot ? parseFloat(pad.holeLength) : holeD],
       drillshape: isSlot ? 'oblong' : undefined,
       holeCenterPoint: parseHoleCenterPoint(pad),      
-      polygons: [_.map(pad.pointArr,(point) => {return [point.x,point.y];})],
+      polygons: [_.map(pad.pointArr,(point) => {return [point.x-pad.x,point.y-pad.y];})],
       net: pad.net
     };
   });

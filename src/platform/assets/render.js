@@ -427,8 +427,18 @@ function drawTracks(canvas, layer, defaultColor, highlight) {
   for (var track of pcbdata.tracks[layer]) {
     if (highlight && highlightedNet != track.net) continue;
     if (!hasHole(track)) {
+      ctx.fillStyle = highlight ? defaultColor : settings.netColors[track.net] || defaultColor;
       ctx.strokeStyle = highlight ? defaultColor : settings.netColors[track.net] || defaultColor;
       ctx.lineWidth = track.width;
+      if ("svgpath" in track) {
+        if (track.type == "polygon") {
+          ctx.fill(getPolygonsPath(track));
+          continue
+        } else {
+          ctx.stroke(new Path2D(track.svgpath));
+          continue
+        }
+      }
       ctx.beginPath();
       if ('radius' in track) {
         ctx.arc(
