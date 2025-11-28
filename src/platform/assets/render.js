@@ -411,6 +411,9 @@ function drawFootprints(canvas, layer, scalefactor, highlight) {
     for (var pad of pcbdata.pads) {
       drawPadHole(ctx, pad, colors.padHole);
     }
+  }
+
+  if (settings.renderTracks) {
     var hasHole = (track) => (
       'drillsize' in track &&
       track.start[0] == track.end[0] &&
@@ -580,7 +583,8 @@ function drawNets(canvas, layer, highlight) {
       if (highlightedNet != pad.net) continue;
       drawPadHole(ctx, pad, padHoleColor);
     }
-
+  }
+  if (highlight && settings.renderTracks) {
     // draw via
     var hasHole = (track) => (
       'drillsize' in track &&
