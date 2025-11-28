@@ -1,6 +1,6 @@
 {
   "name": "easyeda-ibom-extension",
-  "version": "0.1.2.fix",
+  "version": "0.1.2.fix.1",
   "description": "",
   "scripts": {
     "build": "set NODE_OPTIONS=--openssl-legacy-provider && webpack --mode production",

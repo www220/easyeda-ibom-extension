@@ -112,6 +112,7 @@ const parseVias = (data) => {
     return {
       start: [via.x, via.y],
       end: [via.x, via.y],
+      drillsize: parseFloat(via.holeR) * 2,
       width: via.diameter,
       net: via.net,
     }
@@ -296,7 +297,7 @@ const parsePads = (data) => {
       pin1: pad.number === '1' ? 1 : undefined,
       shape: mapShape(pad.shape),
       type: pad.layerid === LayerType.MultiLayer ? 'th' : 'smd',
-      drillsize: [holeD, isSlot ? parseFloat(pad.holeLength) : holeD],
+      drillsize: [isSlot ? parseFloat(pad.holeLength) : holeD, holeD],
       drillshape: isSlot ? 'oblong' : undefined,
       holeCenterPoint: parseHoleCenterPoint(pad),      
       polygons: [_.map(pad.pointArr,(point) => {return [point.x-pad.x,point.y-pad.y];})],

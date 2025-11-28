@@ -402,7 +402,7 @@ function drawFootprints(canvas, layer, scalefactor, highlight) {
 
   if (settings.renderPads) {
     colors.pad = style.getPropertyValue('--pad-color');
-    colors.outline = style.getPropertyValue('--pad-hole-color');
+    colors.padHole = style.getPropertyValue('--pad-hole-color');
     for (var pad of pcbdata.pads) {
       if (pad.layers.includes(layer)) {
         drawPad(ctx, pad, colors.pad, false);
@@ -410,6 +410,24 @@ function drawFootprints(canvas, layer, scalefactor, highlight) {
     }
     for (var pad of pcbdata.pads) {
       drawPadHole(ctx, pad, colors.padHole);
+    }
+    var hasHole = (track) => (
+      'drillsize' in track &&
+      track.start[0] == track.end[0] &&
+      track.start[1] == track.end[1]);
+    for (var track of pcbdata.tracks[layer]) {
+      if (!hasHole(track)) continue;
+      ctx.strokeStyle = colors.pad;
+      ctx.lineWidth = track.width;
+      ctx.beginPath();
+      ctx.moveTo(...track.start);
+      ctx.lineTo(...track.end);
+      ctx.stroke();
+      ctx.strokeStyle = colors.padHole;
+      ctx.lineWidth = track.drillsize;
+      ctx.moveTo(...track.start);
+      ctx.lineTo(...track.end);
+      ctx.stroke();
     }
   }
 }
@@ -552,19 +570,36 @@ function drawNets(canvas, layer, highlight) {
     }
 
     // draw pads
-    var padDrawn = false;
     for (var pad of pcbdata.pads) {
       if (highlightedNet != pad.net) continue;
       if (pad.layers.includes(layer)) {
         drawPad(ctx, pad, padColor, false);
-        padDrawn = true;
       }
     }
-    if (padDrawn) {
-      // redraw all pad holes because some pads may overlap
-      for (var pad of pcbdata.pads) {
-        drawPadHole(ctx, pad, padHoleColor);
-      }
+    for (var pad of pcbdata.pads) {
+      if (highlightedNet != pad.net) continue;
+      drawPadHole(ctx, pad, padHoleColor);
+    }
+
+    // draw via
+    var hasHole = (track) => (
+      'drillsize' in track &&
+      track.start[0] == track.end[0] &&
+      track.start[1] == track.end[1]);
+    for (var track of pcbdata.tracks[layer]) {
+      if (highlight && highlightedNet != track.net) continue;
+      if (!hasHole(track)) continue;
+      ctx.strokeStyle = padColor;
+      ctx.lineWidth = track.width;
+      ctx.beginPath();
+      ctx.moveTo(...track.start);
+      ctx.lineTo(...track.end);
+      ctx.stroke();
+      ctx.strokeStyle = padHoleColor;
+      ctx.lineWidth = track.drillsize;
+      ctx.moveTo(...track.start);
+      ctx.lineTo(...track.end);
+      ctx.stroke();
     }
   }
 }
