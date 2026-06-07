@@ -565,7 +565,7 @@ const parseBom = (data, easyBom) => {
     const both = _.groupBy(_.filter(footprintsMetadata, meta => _.includes(layers,meta.layer)),obj => `${obj.value}+${obj.package}`);    
     return _.map(both,(footprints) => {
       return _.map(footprints,(fpt) => {
-        return [fpt.ref,fpt.id];
+        return [fpt.ref,fpt.id,fpt.layer==='B'?0:1];
       });
     });
   };

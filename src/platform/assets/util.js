@@ -1,7 +1,6 @@
 /* Utility functions */
 
-var storagePrefix = 'KiCad_HTML_BOM__' + pcbdata.metadata.title + '__' +
-  pcbdata.metadata.revision + '__#';
+var storagePrefix;
 var storage;
 
 function initStorage(key) {
@@ -23,6 +22,7 @@ function initStorage(key) {
 
 function readStorage(key) {
   if (storage) {
+    if (!storagePrefix) storagePrefix = 'KiCad_HTML_BOM__' + pcbdata?pcbdata.metadata.title:'' + '__' + pcbdata?pcbdata.metadata.revision:'' + '__#'
     return storage.getItem(storagePrefix + key);
   } else {
     return null;
@@ -31,6 +31,7 @@ function readStorage(key) {
 
 function writeStorage(key, value) {
   if (storage) {
+    if (!storagePrefix) storagePrefix = 'KiCad_HTML_BOM__' + pcbdata?pcbdata.metadata.title:'' + '__' + pcbdata?pcbdata.metadata.revision:'' + '__#'
     storage.setItem(storagePrefix + key, value);
   }
 }
@@ -412,6 +413,7 @@ function resetSettings() {
     var keys = [];
     for (var i = 0; i < storage.length; i++) {
       var key = storage.key(i);
+      if (!storagePrefix) storagePrefix = 'KiCad_HTML_BOM__' + pcbdata?pcbdata.metadata.title:'' + '__' + pcbdata?pcbdata.metadata.revision:'' + '__#'
       if (key.startsWith(storagePrefix)) keys.push(key);
     }
     for (var key of keys) storage.removeItem(key);

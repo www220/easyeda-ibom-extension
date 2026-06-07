@@ -11,7 +11,7 @@ import { buildIBomHTML } from './html-builder';
 const fetchMeta = () => {
   const meta = {
     title: 'Project Name',
-    owner: 'Unknown Company',
+    owner: 'OSHWHub',
     date: format(new Date(), 'yyyy-MM-dd'),
     revision: '0'
   };

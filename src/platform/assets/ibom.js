@@ -488,7 +488,7 @@ function populateBomHeader(placeHolderColumn = null, placeHolderElements = null)
       var stateB = getCheckboxState(checkbox, b);
       if (stateA > stateB) return -1;
       if (stateA < stateB) return 1;
-      return 0;
+      return RefsFieldCompareClosure(a,b);
     }
   }
   var stringFieldCompareClosure = function (fieldIndex) {
@@ -496,8 +496,16 @@ function populateBomHeader(placeHolderColumn = null, placeHolderElements = null)
       var fa = pcbdata.bom.fields[a[0][1]][fieldIndex];
       var fb = pcbdata.bom.fields[b[0][1]][fieldIndex];
       if (fa != fb) return fa > fb ? 1 : -1;
-      else return 0;
+      else return RefsFieldCompareClosure(a,b);
     }
+  }
+  var RefsFieldCompareClosure = function (a, b) {
+    var i = 0;
+    while (i < a.length && i < b.length) {
+      if (a[i] != b[i]) return compareRefs(a[i][0], b[i][0]);
+      i++;
+    }
+    return a.length - b.length;
   }
   var referenceRegex = /(?<prefix>[^0-9]+)(?<number>[0-9]+)/;
   var compareRefs = (a, b) => {
@@ -547,20 +555,15 @@ function populateBomHeader(placeHolderColumn = null, placeHolderElements = null)
           tr.appendChild(th);
         }
       } else if (column === "References") {
-        tr.appendChild(createColumnHeader("References", "references", (a, b) => {
-          var i = 0;
-          while (i < a.length && i < b.length) {
-            if (a[i] != b[i]) return compareRefs(a[i][0], b[i][0]);
-            i++;
-          }
-          return a.length - b.length;
-        }));
+        tr.appendChild(createColumnHeader(
+          "References", "references", RefsFieldCompareClosure));
       } else if (column === "Value") {
         tr.appendChild(createColumnHeader("Value", "value", (a, b) => {
           var ra = a[0][1], rb = b[0][1];
-          return valueCompare(
+          var ret = valueCompare(
             pcbdata.bom.parsedValues[ra], pcbdata.bom.parsedValues[rb],
             pcbdata.bom.fields[ra][valueIndex], pcbdata.bom.fields[rb][valueIndex]);
+          return ret == 0 ? RefsFieldCompareClosure(a,b) : ret;
         }));
         return;
       } else if (column === "Footprint") {
@@ -568,7 +571,7 @@ function populateBomHeader(placeHolderColumn = null, placeHolderElements = null)
           "Footprint", "footprint", stringFieldCompareClosure(footprintIndex)));
       } else if (column === "Quantity" && settings.bommode == "grouped") {
         tr.appendChild(createColumnHeader("Quantity", "quantity", (a, b) => {
-          return a.length - b.length;
+          return a.length == b.length ? RefsFieldCompareClosure(a,b) : a.length - b.length;
         }));
       } else {
         // Other fields
@@ -695,7 +698,8 @@ function populateBomBody(placeholderColumn = null, placeHolderElements = null) {
         } else if (column === "Quantity" && settings.bommode == "grouped") {
           // Quantity
           td = document.createElement("TD");
-          td.textContent = references.length;
+          var refs=0;for(let ref of references)refs+=ref[2];
+          td.textContent = (!refs||refs==references.length)?(references.length):(references.length+'/'+refs);
           tr.appendChild(td);
         } else {
           // All the other fields
