@@ -256,6 +256,8 @@ function drawDrawing(ctx, scalefactor, drawing, color) {
     drawedge(ctx, scalefactor, drawing, color);
   } else if (drawing.type == "polygon") {
     drawPolygonShape(ctx, scalefactor, drawing, color);
+  } else if (!drawing.type && drawing.text !== undefined) {
+    drawProText(ctx, drawing, color);
   } else {
     drawText(ctx, drawing, color);
   }
@@ -442,6 +444,34 @@ function drawFootprints(canvas, layer, scalefactor, highlight) {
   }
 }
 
+function drawProText(ctx, item, color) {
+  if (!item.text) return;
+  if ("ref" in item && !settings.renderReferences) return;
+  if ("val" in item && !settings.renderValues) return;
+  ctx.save(); ctx.fillStyle = color;
+  ctx.translate(item.x || 0, item.y || 0);
+  ctx.lineWidth = item.width;
+  if (item.mirror) ctx.scale(-1, 1);
+  if (item.rotation) ctx.rotate(-item.rotation * Math.PI / 180);
+  var fontSize = item.fontSize || 10;
+  if (item.fontFamily=='default') item.fontFamily = 'Arial';
+  ctx.font = (item.bold?"bold ":"") + (item.italic?"italic ":"") + fontSize + "px " + item.fontFamily || "Arial";
+  ctx.textBaseline = item.align%3==1?'top':item.align%3==2?'middle':'bottom';
+  ctx.textAlign = item.align<=3?'left':item.align<=6?'center':'right';
+  if (item.reverse) {
+    const metrics = ctx.measureText(item.text);
+    const fWidth=metrics.width;
+    const fOffset=(metrics.fontBoundingBoxAscent-[2,0,1][(item.align)%3]*fontSize/2)/2;
+    const fHeight=fontSize;
+    ctx.fillRect(ctx.textAlign=='left'?0:ctx.textAlign=='center'?-(fWidth+item.expansion)/2:-(fWidth+item.expansion), ctx.textBaseline=='top'?-fOffset:ctx.textBaseline=='middle'?-(fHeight+item.expansion)/2-fOffset:-(fHeight+item.expansion)-fOffset, fWidth+item.expansion, fHeight+item.expansion);
+    ctx.globalCompositeOperation = 'destination-out';
+    ctx.fillStyle = '#000'
+  }
+  var lines = item.text.split("\n");
+  for (var i = 0; i < lines.length; i++) { if (lines[i]) ctx.fillText(lines[i], 0, i * fontSize * 1.3); }
+  ctx.restore();
+}
+
 function drawBgLayer(layername, canvas, layer, scalefactor, edgeColor, polygonColor, textColor) {
   var ctx = canvas.getContext("2d");
   for (var d of pcbdata.drawings[layername][layer]) {
@@ -449,6 +479,8 @@ function drawBgLayer(layername, canvas, layer, scalefactor, edgeColor, polygonCo
       drawedge(ctx, scalefactor, d, edgeColor);
     } else if (d.type == "polygon") {
       drawPolygonShape(ctx, scalefactor, d, polygonColor);
+    } else if (d.text !== undefined && !d.type) {
+      drawProText(ctx, d, textColor);
     } else {
       drawText(ctx, d, textColor);
     }
@@ -479,6 +511,10 @@ function drawTracks(canvas, layer, defaultColor, highlight) {
           ctx.stroke(new Path2D(track.svgpath));
           continue
         }
+      } else if (track.text !== undefined && !track.type) {
+        var style = getComputedStyle(topmostdiv);
+        drawProText(ctx, track, style.getPropertyValue('--silkscreen-text-color'));
+        continue;
       }
       ctx.beginPath();
       if ('radius' in track) {

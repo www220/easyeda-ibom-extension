@@ -59,7 +59,7 @@ export const buildIBomHTML = (source, meta, bom) => {
     '///RENDERJS///': 'render.js',
     '///TABLEUTILJS///': 'table-util.js',
     '///IBOMJS///': 'ibom.js',
-    '///USERJS///': ' ',
+    '///USERJS///': 'user.js',
     '///USERFOOTER///': '<!-- USERFOOTER -->',
     '///USERHEADER///': '<!-- USERHEADER -->'
   };

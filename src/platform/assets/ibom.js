@@ -1304,7 +1304,7 @@ function topToggle() {
   }
 }
 
-window.onload = function (e) {
+function initBOM() {
   initRender();
   initStorage();
   initDefaults();
