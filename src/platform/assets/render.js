@@ -24,12 +24,17 @@ function drawText(ctx, text, color) {
   ctx.strokeStyle = color;
   ctx.lineCap = "round";
   ctx.lineJoin = "round";
-  ctx.lineWidth = text.thickness;
   if ("svgpath" in text) {
-    ctx.stroke(new Path2D(text.svgpath));
+    if ("thickness" in text) {
+      ctx.lineWidth = text.thickness;
+      ctx.stroke(new Path2D(text.svgpath));
+    } else if ("fillrule" in text) {
+      ctx.fill(new Path2D(text.svgpath), text.fillrule);
+    }
     ctx.restore();
     return;
   }
+  ctx.lineWidth = text.thickness;
   if ("polygons" in text) {
     ctx.fill(getPolygonsPath(text));
     ctx.restore();
@@ -310,6 +315,8 @@ function drawPadHole(ctx, pad, padHoleColor) {
   ctx.fillStyle = padHoleColor;
   if (pad.drillshape == "oblong") {
     ctx.fill(getOblongPath(pad.drillsize));
+  } else if (pad.drillshape == "rect") {
+    ctx.fill(getChamferedRectPath(pad.drillsize, 0, 0, 0));
   } else {
     ctx.fill(getCirclePath(pad.drillsize[0] / 2));
   }

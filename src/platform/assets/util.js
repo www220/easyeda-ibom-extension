@@ -71,7 +71,8 @@ function saveBomTable(output) {
   var text = '';
   for (var node of bomhead.childNodes[0].childNodes) {
     if (node.firstChild) {
-      text += (output == 'csv' ? `"${node.firstChild.nodeValue}"` : node.firstChild.nodeValue);
+      var name = node.firstChild.nodeValue ?? "";
+      text += (output == 'csv' ? `"${name}"` : name);
     }
     if (node != bomhead.childNodes[0].lastChild) {
       text += (output == 'csv' ? ',' : '\t');
@@ -183,6 +184,7 @@ var units = {
     return 1;
   },
   valueRegex: null,
+  valueAltRegex: null,
 }
 
 function initUtils() {
@@ -206,8 +208,10 @@ function initUtils() {
   if (config.fields.includes("Value")) {
     var index = config.fields.indexOf("Value");
     pcbdata.bom["parsedValues"] = {};
+    var allList = getBomListByLayer('FB').flat();
     for (var id in pcbdata.bom.fields) {
-      pcbdata.bom.parsedValues[id] = parseValue(pcbdata.bom.fields[id][index])
+      var ref_key = allList.find(item => item[1] == Number(id)) || [];
+      pcbdata.bom.parsedValues[id] = parseValue(pcbdata.bom.fields[id][index], ref_key[0] || '');
     }
   }
 }
@@ -219,45 +223,44 @@ function parseValue(val, ref) {
       if (unit == 'Ω' || unit == "ohm" || unit == "ohms") {
         unit = 'r';
       }
-      unit = unit[0];
-    } else {
-      ref = /^([a-z]+)\d+$/i.exec(ref);
-      if (ref) {
-        ref = ref[1].toLowerCase();
-        if (ref == "c") unit = 'f';
-        else if (ref == "l") unit = 'h';
-        else if (ref == "r" || ref == "rv") unit = 'r';
-        else unit = null;
-      }
+      return unit[0];
     }
-    return unit;
+
+    var resarr = /^([a-z]+)\d+$/i.exec(ref);
+    switch (Array.isArray(resarr) && resarr[1].toLowerCase()) {
+      case "c": return 'f';
+      case "l": return 'h';
+      case "r":
+      case "rv": return 'r';
+    }
+    return null;
   };
   val = val.replace(/,/g, "");
   var match = units.valueRegex.exec(val);
-  var unit;
-  if (match) {
-    val = parseFloat(match[1]);
-    if (match[2]) {
-      val = val * units.getMultiplier(match[2]);
-    }
-    unit = inferUnit(match[3], ref);
+  if (Array.isArray(match)) {
+    var unit = inferUnit(match[3], ref);
+    var val_i = parseFloat(match[1]);
     if (!unit) return null;
-    else return {
-      val: val,
+    if (match[2]) {
+      val_i = val_i * units.getMultiplier(match[2]);
+    }
+    return {
+      val: val_i,
       unit: unit,
       extra: match[4],
     }
   }
+
   match = units.valueAltRegex.exec(val);
-  if (match && (match[1] || match[4])) {
-    val = parseFloat(match[1] + "." + match[4]);
-    if (match[3]) {
-      val = val * units.getMultiplier(match[3]);
-    }
-    unit = inferUnit(match[2], ref);
+  if (Array.isArray(match) && (match[1] || match[4])) {
+    var unit = inferUnit(match[2], ref);
+    var val_i = parseFloat(match[1] + "." + match[4]);
     if (!unit) return null;
-    else return {
-      val: val,
+    if (match[3]) {
+      val_i = val_i * units.getMultiplier(match[3]);
+    }
+    return {
+      val: val_i,
       unit: unit,
       extra: match[5],
     }
@@ -451,6 +454,8 @@ function overwriteSettings(newSettings) {
   document.getElementById("dnpOutlineCheckbox").checked = settings.renderDnpOutline;
   setRedrawOnDrag(settings.redrawOnDrag);
   document.getElementById("dragCheckbox").checked = settings.redrawOnDrag;
+  setHighlightRowOnClick(settings.highlightRowOnClick);
+  document.getElementById("highlightRowOnClickCheckbox").checked = settings.highlightRowOnClick;
   setDarkMode(settings.darkMode);
   document.getElementById("darkmodeCheckbox").checked = settings.darkMode;
   setHighlightPin1(settings.highlightpin1);
@@ -546,7 +551,10 @@ function initDefaults() {
   setHighlightPin1(highlightpin1);
   document.forms.highlightpin1.highlightpin1.value = highlightpin1;
 
-  settings.markWhenChecked = readStorage("markWhenChecked") || "";
+  settings.markWhenChecked = readStorage("markWhenChecked");
+  if (settings.markWhenChecked == null) {
+    settings.markWhenChecked = config.mark_when_checked;
+  }
   populateMarkWhenCheckedOptions();
 
   function initBooleanSetting(storageString, def, elementId, func) {
@@ -575,6 +583,7 @@ function initDefaults() {
   }
   initBooleanSetting("dnpOutline", false, "dnpOutlineCheckbox", dnpOutline);
   initBooleanSetting("redrawOnDrag", config.redraw_on_drag, "dragCheckbox", setRedrawOnDrag);
+  initBooleanSetting("highlightRowOnClick", false, "highlightRowOnClickCheckbox", setHighlightRowOnClick);
   initBooleanSetting("darkmode", config.dark_mode, "darkmodeCheckbox", setDarkMode);
 
   var fields = ["checkboxes", "References"].concat(config.fields).concat(["Quantity"]);
