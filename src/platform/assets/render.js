@@ -256,7 +256,7 @@ function drawDrawing(ctx, scalefactor, drawing, color) {
     drawedge(ctx, scalefactor, drawing, color);
   } else if (drawing.type == "polygon") {
     drawPolygonShape(ctx, scalefactor, drawing, color);
-  } else if (!drawing.type && drawing.text !== undefined) {
+  } else if (drawing.text !== undefined && drawing.font !== undefined && !drawing.type) {
     drawProText(ctx, drawing, color);
   } else {
     drawText(ctx, drawing, color);
@@ -454,8 +454,7 @@ function drawProText(ctx, item, color) {
   if (item.mirror) ctx.scale(-1, 1);
   if (item.rotation) ctx.rotate(-item.rotation * Math.PI / 180);
   var fontSize = item.fontSize || 10;
-  if (item.fontFamily=='default') item.fontFamily = 'Arial';
-  ctx.font = (item.bold?"bold ":"") + (item.italic?"italic ":"") + fontSize + "px " + item.fontFamily || "Arial";
+  ctx.font = item.font;
   ctx.textBaseline = item.align%3==1?'top':item.align%3==2?'middle':'bottom';
   ctx.textAlign = item.align<=3?'left':item.align<=6?'center':'right';
   if (item.reverse) {
@@ -479,7 +478,7 @@ function drawBgLayer(layername, canvas, layer, scalefactor, edgeColor, polygonCo
       drawedge(ctx, scalefactor, d, edgeColor);
     } else if (d.type == "polygon") {
       drawPolygonShape(ctx, scalefactor, d, polygonColor);
-    } else if (d.text !== undefined && !d.type) {
+    } else if (d.text !== undefined && d.font !== undefined && !d.type) {
       drawProText(ctx, d, textColor);
     } else {
       drawText(ctx, d, textColor);
@@ -511,7 +510,7 @@ function drawTracks(canvas, layer, defaultColor, highlight) {
           ctx.stroke(new Path2D(track.svgpath));
           continue
         }
-      } else if (track.text !== undefined && !track.type) {
+      } else if (track.text !== undefined && track.font !== undefined && !track.type) {
         var style = getComputedStyle(topmostdiv);
         drawProText(ctx, track, style.getPropertyValue('--silkscreen-text-color'));
         continue;
